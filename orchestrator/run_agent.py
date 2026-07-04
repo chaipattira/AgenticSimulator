@@ -4,6 +4,50 @@ from pathlib import Path
 from judge.oracle import Oracle
 
 
+_CLAUDE_MD = """\
+# Operating instructions
+
+## Journal
+
+Every iteration gets a subsection in `journal.md` with these five headings:
+
+```
+## Iteration N
+**Goal:** what you are trying to learn from this call
+**Hypothesis:** what you expect to happen and why
+**Method:** the exact parameters you will test
+**Analysis:** what the result tells you — compare to obs_pk shape, explain residuals
+**Next steps:** what you will try next and why
+```
+
+Include failures. If it is not in the journal, it did not happen.
+
+## best_params.json
+
+After every call to `compute_chi2.py`, update `best_params.json` with your current best parameters (lowest chi2 so far):
+
+```json
+{"om": ..., "ob": ..., "h": ..., "ns": ..., "as_": ..., "w0": ...}
+```
+
+## Stopping
+
+Stop when either:
+- chi2 < ε (write "CALIBRATION COMPLETE" in the journal, update best_params.json, stop)
+- You judge that further calls will not improve the calibration
+
+Do not keep calling just to explore. Your goal is to reach a good calibration with as few simulator calls as possible.
+
+## Compaction recovery
+
+If your context is reset, do not restart from scratch:
+1. Read `runs.csv` — find the row with the lowest chi2, that is your current best
+2. Read the last few entries in `journal.md` to recover your reasoning state
+3. Update `best_params.json` with the best row from `runs.csv` if it is missing
+4. Continue from where you left off
+"""
+
+
 def _find_claude() -> str:
     if path := shutil.which("claude"):
         return path
@@ -15,7 +59,7 @@ def _find_claude() -> str:
 
 def setup_workdir(base: Path, oracle: Oracle, project_root: Path) -> Path:
     """
-    Create a fresh agent workdir with obs_pk.npy and config.
+    Create a fresh agent workdir with obs_pk.npy, config, and CLAUDE.md.
     theta_fid is NEVER written here — only oracle.generate_obs() output.
     """
     base = Path(base)
@@ -25,9 +69,10 @@ def setup_workdir(base: Path, oracle: Oracle, project_root: Path) -> Path:
     (base / "config").mkdir(exist_ok=True)
     shutil.copy(project_root / "config" / "prior_bounds.yaml", base / "config")
 
-    # Restrict the agent to its own workdir — prevents reading other rollouts or project root.
-    # Claude Code enforces allowedPaths at the permission layer, so even bash tool calls
-    # outside this path are blocked regardless of what program.md says.
+    # Durable operating instructions — survive context compaction
+    (base / "CLAUDE.md").write_text(_CLAUDE_MD)
+
+    # Restrict the agent to its own workdir and the shared tools directory
     (base / ".claude").mkdir(exist_ok=True)
     (base / ".claude" / "settings.json").write_text(
         json.dumps({"allowedPaths": [str(base.resolve()), str((project_root / "tools").resolve())]})
@@ -38,12 +83,11 @@ def setup_workdir(base: Path, oracle: Oracle, project_root: Path) -> Path:
 
 def run_agent(workdir: Path, project_root: Path, timeout_seconds: int = 3600) -> int:
     """
-    Invoke claude --non-interactive in workdir with program.md as the prompt.
+    Invoke claude --print in workdir with program.md as the task prompt.
     Returns the exit code.
     """
-    program_md = (project_root / "program.md").read_text()
     tools_path = str(project_root / "tools")
-    prompt = program_md.replace("/path/to/tools", tools_path)
+    prompt = (project_root / "program.md").read_text().replace("TOOLS_PATH", tools_path)
 
     venv_bin = project_root / ".venv" / "bin"
     path = str(venv_bin) + os.pathsep + os.environ.get("PATH", "")

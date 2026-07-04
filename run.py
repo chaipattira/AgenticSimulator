@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """Single-shot entry point: draw a random theta_fid, set up results/agent/, run the agent, print summary."""
-import csv, json
+import json
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +9,7 @@ from symbolic_pofk.syren_new import pnl_new_emulated
 
 from judge.oracle import Oracle
 from orchestrator.run_agent import setup_workdir, run_agent
+from orchestrator.harvest import harvest_rollout
 
 
 def _draw_valid_theta(rng, bounds, k_vec):
@@ -38,13 +39,11 @@ def main():
     print(f"workdir: {workdir}")
     run_agent(workdir, project_root)
 
-    rows = list(csv.DictReader(open(workdir / "runs.csv")))
-    def _chi2(r):
-        try: return float(r["chi2"]) if r["chi2"] else 1e10
-        except: return 1e10
-    best = min(rows, key=_chi2)
-    print(f"n_calls={len(rows)}  chi2_min={_chi2(best):.4f}  converged={_chi2(best) < epsilon}")
-    print(f"theta={json.dumps({k: float(best[k]) for k in ['om','ob','h','ns','as_','w0']})}")
+    result = harvest_rollout(workdir, epsilon=epsilon)
+    chi2_oracle = oracle.score(result.theta_agent)
+    print(f"n_calls={result.n_calls}  chi2_min={result.chi2_min:.4f}  "
+          f"chi2_oracle={chi2_oracle:.4f}  converged={result.converged}")
+    print(f"theta={json.dumps(result.theta_agent)}")
 
 
 if __name__ == "__main__":
