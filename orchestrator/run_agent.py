@@ -14,31 +14,53 @@ def _syren_source_dir() -> Path | None:
 
 
 _CLAUDE_MD = """\
-# Operating instructions
+You are an expert cosmological simulator. Your task is to recover
+the cosmological parameters that generated the observed matter power spectrum in `obs_pk.npy`.
+Full task description and tool syntax are in `program.md`.
 
-## Journal
+# Non-negotiable Rules
 
-Every iteration gets a subsection in `journal.md` with these five headings:
+These rules apply at every step, including after context compaction.
+
+## Iteration loop
+
+Every simulator call follows this sequence — no exceptions:
+1. Write the journal entry header **before** calling the tool (Goal + Hypothesis + Method)
+2. Run `compute_chi2.py` or `get_pk.py`
+3. Complete the journal entry (Result + Analysis + Next steps)
+4. Update `best_params.json` if this call produced the lowest chi2 so far
+
+## Journal format
+
+Every iteration in `journal.md`:
 
 ```
 ## Iteration N
 **Goal:** what you are trying to learn from this call
-**Hypothesis:** what you expect to happen and why
-**Method:** the exact parameters you will test
-**Analysis:** what the result tells you — compare to obs_pk shape, explain residuals
+**Hypothesis:** what you predict will happen and why
+**Method:** exact parameters — {"om":…, "ob":…, "h":…, "ns":…, "as_":…, "w0":…}
+**Result:** chi2=<value>  call_idx=<N>
+**Analysis:** what the result tells you. include failures and/or note which parameters to move and in which direction
 **Next steps:** what you will try next and why
 ```
 
-Include failures. If it is not in the journal, it did not happen.
+Remember: If it is not in the journal, it did not happen.
+
+## Tool calling
+
+Every call must have a hypothesis. Do not call speculatively.
+
+All simulator evaluations must go through `compute_chi2.py` or `get_pk.py`. The `symbolic_pofk/` source is read-only.
+You can inspect it to understand how parameters affect the power spectrum but NEVER call from `symbolic_pofk/` directly!
 
 ## Analysis scripts
 
-If you write Python for analysis, save it as a `.py` file in your workdir before running it.
-Do not run Python snippets inline without first saving them. If it is not on disk, it did not happen.
+Save every Python analysis script to a `.py` file in the workdir before running it.
+If it is not on disk, it did not happen.
 
 ## best_params.json
 
-After every call to `compute_chi2.py`, update `best_params.json` with your current best parameters (lowest chi2 so far):
+Always holds your current lowest-chi2 parameters. Update after every call:
 
 ```json
 {"om": ..., "ob": ..., "h": ..., "ns": ..., "as_": ..., "w0": ...}
@@ -46,26 +68,18 @@ After every call to `compute_chi2.py`, update `best_params.json` with your curre
 
 ## Stopping
 
-Stop when either:
-- chi2 < ε (write "CALIBRATION COMPLETE" in the journal, update best_params.json, stop)
-- You judge that further calls will not improve the calibration
-
-Do not keep calling just to explore. Your goal is to reach a good calibration with as few simulator calls as possible.
-
-## Simulator codebase
-
-The syren_new source is read-only reference material. Read it to understand how
-cosmological parameters enter the P(k) formula. Do not call `pnl_new_emulated`
-or any other function from it directly — all simulator evaluations must go through
-`compute_chi2.py` or `get_pk.py` so they are logged to `runs.csv`.
+Stop when any of these is true:
+- **chi2 < ε** — write "CALIBRATION COMPLETE" as the Analysis in the final iteration, update `best_params.json`, stop. (ε is at key `chi2.epsilon` in `config/prior_bounds.yaml`)
+- **Budget exhausted** — `call_idx` has reached the value at key `budget.max_calls` in `config/prior_bounds.yaml`
+- **Converged** — last several calls improved chi2 by < 1% and you are below 2×ε
 
 ## Compaction recovery
 
-If your context is reset, do not restart from scratch:
-1. Read `runs.csv` — find the row with the lowest chi2, that is your current best
-2. Read the last few entries in `journal.md` to recover your reasoning state
-3. Update `best_params.json` with the best row from `runs.csv` if it is missing
-4. Continue from where you left off
+If your context is reset mid-run:
+1. Read `runs.csv` — find the row with the lowest chi2; that is your current best
+2. Read the last several entries in `journal.md` to recover your reasoning
+3. Verify `best_params.json` matches the best `runs.csv` row; update it if not
+4. Continue from where you left off — do not restart from prior midpoints
 """
 
 

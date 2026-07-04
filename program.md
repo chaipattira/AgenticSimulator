@@ -1,15 +1,13 @@
 # Cosmological Parameter Calibration
 
-Calibrate a cosmological simulation to match a target matter power spectrum P(k).
-
-## Your task
-
-Find cosmological parameters θ = {om, ob, h, ns, as_, w0} that reproduce the observed P(k) stored in `obs_pk.npy`. Your goal is to reach a good calibration using as few simulator calls as possible — stop as soon as you are confident in your answer.
+**Task:** Find cosmological parameters θ = {om, ob, h, ns, as_, w0} that reproduce the observed matter power spectrum in `obs_pk.npy`. Your benchmark score is the simulator call index at convergence — minimize it.
 
 ## Input files
 
-- `obs_pk.npy` — NumPy array, shape (50,) — the observed P(k) at k = logspace(−2, 0, 50) h/Mpc
-- `config/prior_bounds.yaml` — parameter bounds and chi2 threshold ε
+| File | Description |
+|------|-------------|
+| `obs_pk.npy` | NumPy array shape (50,) — P(k) at k = logspace(−2, 0, 50) h/Mpc |
+| `config/prior_bounds.yaml` | Parameter bounds, convergence threshold (`chi2.epsilon`), call budget (`budget.max_calls`) |
 
 ## Tools
 
@@ -23,40 +21,21 @@ python TOOLS_PATH/get_pk.py --params '{"om":0.3,"ob":0.046,"h":0.7,"ns":0.97,"as
 ```
 → prints JSON with keys `k`, `pk`, `obs_pk`, `residual_frac`. Also appends to `runs.csv`.
 
-Both tools enforce prior bounds and will error on out-of-range parameters.
+Both tools enforce prior bounds and error on out-of-range parameters.
 
-IMPORTANT: All simulator evaluations must go through these two tools — do not call `pnl_new_emulated`
-directly from your own scripts.
+## Scoring
 
-You may also write and execute arbitrary Python for analysis — save every script as a `.py`
-file in your workdir before running it.
+```
+chi2 = mean_k [ (P(θ, k) - P_obs(k))^2 / σ(k)^2 ]
+```
+where σ(k) = 0.02 × P_obs(k). Convergence threshold ε is in `config/prior_bounds.yaml` under `chi2.epsilon`.
 
-## What to produce
+## Output
 
-Write `best_params.json` with your best parameter estimate — update it after every iteration:
+Write `best_params.json` with your current best estimate — update after every call:
 
 ```json
 {"om": ..., "ob": ..., "h": ..., "ns": ..., "as_": ..., "w0": ...}
 ```
 
-## Scoring
-
-Your `best_params.json` is evaluated as:
-
-```
-chi2 = sum_k [ (P(θ, k) - P_obs(k))^2 / σ(k)^2 ] / N_k
-```
-
-where σ(k) = 0.02 × P_obs(k). Pass threshold is chi2 < ε (see `config/prior_bounds.yaml`, key `chi2.epsilon`).
-
-## Simulator codebase
-
-The syren_new source is available for reading — it documents what each parameter does
-and shows the symbolic P(k) formula. Use it to understand parameter sensitivities.
-The source is in the `symbolic_pofk/` directory listed in your allowed paths.
-
-## Notes
-
-The WMAP9 cosmology (fiducial_wmap9 in config) is a physically reasonable starting point near the center of the prior — but the true parameters may differ significantly from it.
-
-See CLAUDE.md for operating instructions.
+See `CLAUDE.md` for procedural rules (journal, best_params.json, stopping criteria).
