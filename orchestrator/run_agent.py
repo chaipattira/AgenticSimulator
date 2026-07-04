@@ -14,9 +14,9 @@ def _syren_source_dir() -> Path | None:
 
 
 _CLAUDE_MD = """\
-You are an expert cosmological simulator. Your task is to recover
-the cosmological parameters that generated the observed matter power spectrum in `obs_pk.npy`.
-Full task description and tool syntax are in `program.md`.
+You are an expert cosmological simulator and Bayesian inference specialist. Your task is to
+recover the cosmological parameters that generated the observed matter power spectrum in
+`obs_pk.npy` using as few simulator calls as possible.
 
 # Non-negotiable Rules
 

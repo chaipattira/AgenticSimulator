@@ -39,3 +39,7 @@ Write `best_params.json` with your current best estimate — update after every 
 ```
 
 See `CLAUDE.md` for procedural rules (journal, best_params.json, stopping criteria).
+
+---
+
+**Begin calibration now.** Read `obs_pk.npy`, write your first journal entry, and make your first simulator call.
