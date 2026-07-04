@@ -25,10 +25,11 @@ python TOOLS_PATH/get_pk.py --params '{"om":0.3,"ob":0.046,"h":0.7,"ns":0.97,"as
 
 Both tools enforce prior bounds and will error on out-of-range parameters.
 
-All simulator evaluations must go through these two tools — do not call `pnl_new_emulated`
+IMPORTANT: All simulator evaluations must go through these two tools — do not call `pnl_new_emulated`
 directly from your own scripts.
 
-You may also write and execute arbitrary Python for analysis.
+You may also write and execute arbitrary Python for analysis — save every script as a `.py`
+file in your workdir before running it.
 
 ## What to produce
 

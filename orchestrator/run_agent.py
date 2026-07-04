@@ -31,6 +31,11 @@ Every iteration gets a subsection in `journal.md` with these five headings:
 
 Include failures. If it is not in the journal, it did not happen.
 
+## Analysis scripts
+
+If you write Python for analysis, save it as a `.py` file in your workdir before running it.
+Do not run Python snippets inline without first saving them. If it is not on disk, it did not happen.
+
 ## best_params.json
 
 After every call to `compute_chi2.py`, update `best_params.json` with your current best parameters (lowest chi2 so far):
