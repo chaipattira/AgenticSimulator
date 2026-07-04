@@ -1,7 +1,16 @@
-import json, shutil, subprocess
+import json, os, shutil, subprocess
 from pathlib import Path
 
 from judge.oracle import Oracle
+
+
+def _find_claude() -> str:
+    if path := shutil.which("claude"):
+        return path
+    for p in Path.home().glob(".vscode-server/extensions/anthropic.claude-code-*/resources/native-binary/claude"):
+        if p.is_file():
+            return str(p)
+    raise FileNotFoundError("claude CLI not found — add it to PATH or install the Claude Code VSCode extension")
 
 
 def setup_workdir(base: Path, oracle: Oracle, project_root: Path) -> Path:
@@ -19,9 +28,9 @@ def setup_workdir(base: Path, oracle: Oracle, project_root: Path) -> Path:
     # Restrict the agent to its own workdir — prevents reading other rollouts or project root.
     # Claude Code enforces allowedPaths at the permission layer, so even bash tool calls
     # outside this path are blocked regardless of what program.md says.
-    (base / ".claude").mkdir()
+    (base / ".claude").mkdir(exist_ok=True)
     (base / ".claude" / "settings.json").write_text(
-        json.dumps({"allowedPaths": [str(base)]})
+        json.dumps({"allowedPaths": [str(base.resolve()), str((project_root / "tools").resolve())]})
     )
 
     return base
@@ -36,10 +45,19 @@ def run_agent(workdir: Path, project_root: Path, timeout_seconds: int = 3600) ->
     tools_path = str(project_root / "tools")
     prompt = program_md.replace("/path/to/tools", tools_path)
 
-    result = subprocess.run(
-        ["claude", "--print", "--dangerously-skip-permissions", prompt],
-        cwd=workdir,
-        timeout=timeout_seconds,
-        text=True,
-    )
+    venv_bin = project_root / ".venv" / "bin"
+    path = str(venv_bin) + os.pathsep + os.environ.get("PATH", "")
+    env = {**os.environ, "PATH": path}
+
+    log_path = Path(workdir) / "agent.log"
+    with open(log_path, "w") as log_file:
+        result = subprocess.run(
+            [_find_claude(), "--print", "--dangerously-skip-permissions", prompt],
+            cwd=workdir,
+            timeout=timeout_seconds,
+            text=True,
+            stdout=log_file,
+            stderr=log_file,
+            env=env,
+        )
     return result.returncode
