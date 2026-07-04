@@ -25,6 +25,9 @@ python TOOLS_PATH/get_pk.py --params '{"om":0.3,"ob":0.046,"h":0.7,"ns":0.97,"as
 
 Both tools enforce prior bounds and will error on out-of-range parameters.
 
+All simulator evaluations must go through these two tools — do not call `pnl_new_emulated`
+directly from your own scripts.
+
 You may also write and execute arbitrary Python for analysis.
 
 ## What to produce
@@ -44,6 +47,12 @@ chi2 = sum_k [ (P(θ, k) - P_obs(k))^2 / σ(k)^2 ] / N_k
 ```
 
 where σ(k) = 0.02 × P_obs(k). Pass threshold is chi2 < ε (see `config/prior_bounds.yaml`, key `chi2.epsilon`).
+
+## Simulator codebase
+
+The syren_new source is available for reading — it documents what each parameter does
+and shows the symbolic P(k) formula. Use it to understand parameter sensitivities.
+The source is in the `symbolic_pofk/` directory listed in your allowed paths.
 
 ## Notes
 

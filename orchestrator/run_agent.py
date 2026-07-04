@@ -1,7 +1,16 @@
+import importlib.util
 import json, os, shutil, subprocess
 from pathlib import Path
 
 from judge.oracle import Oracle
+
+
+def _syren_source_dir() -> Path | None:
+    """Return the symbolic_pofk package directory, or None if not importable."""
+    spec = importlib.util.find_spec("symbolic_pofk")
+    if spec and spec.submodule_search_locations:
+        return Path(list(spec.submodule_search_locations)[0])
+    return None
 
 
 _CLAUDE_MD = """\
@@ -38,6 +47,13 @@ Stop when either:
 
 Do not keep calling just to explore. Your goal is to reach a good calibration with as few simulator calls as possible.
 
+## Simulator codebase
+
+The syren_new source is read-only reference material. Read it to understand how
+cosmological parameters enter the P(k) formula. Do not call `pnl_new_emulated`
+or any other function from it directly — all simulator evaluations must go through
+`compute_chi2.py` or `get_pk.py` so they are logged to `runs.csv`.
+
 ## Compaction recovery
 
 If your context is reset, do not restart from scratch:
@@ -72,11 +88,14 @@ def setup_workdir(base: Path, oracle: Oracle, project_root: Path) -> Path:
     # Durable operating instructions — survive context compaction
     (base / "CLAUDE.md").write_text(_CLAUDE_MD)
 
-    # Restrict the agent to its own workdir and the shared tools directory
+    # Restrict the agent to its own workdir, the shared tools directory, and the
+    # syren_new source (read-only reference; enforced by instruction, not filesystem perms)
+    allowed = [str(base.resolve()), str((project_root / "tools").resolve())]
+    syren_dir = _syren_source_dir()
+    if syren_dir:
+        allowed.append(str(syren_dir.resolve()))
     (base / ".claude").mkdir(exist_ok=True)
-    (base / ".claude" / "settings.json").write_text(
-        json.dumps({"allowedPaths": [str(base.resolve()), str((project_root / "tools").resolve())]})
-    )
+    (base / ".claude" / "settings.json").write_text(json.dumps({"allowedPaths": allowed}))
 
     return base
 

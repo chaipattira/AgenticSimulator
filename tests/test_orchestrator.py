@@ -31,7 +31,10 @@ def test_setup_workdir_contains_required_files(tmp_path, k_vec, theta_fid, sigma
     assert not (workdir / "theta_fid.yaml").exists()
 
     settings = json.loads((workdir / ".claude" / "settings.json").read_text())
-    assert str(workdir.resolve()) in settings["allowedPaths"]
+    allowed = settings["allowedPaths"]
+    assert str(workdir.resolve()) in allowed
+    # syren_new source should be readable by the agent
+    assert any("symbolic_pofk" in p for p in allowed)
 
 
 def test_claude_md_contains_journal_instructions(tmp_path, k_vec, theta_fid, sigma_frac):
