@@ -119,27 +119,65 @@ def setup_workdir(base: Path, oracle: Oracle, project_root: Path) -> Path:
     return base
 
 
-def run_agent(workdir: Path, project_root: Path, timeout_seconds: int = 3600) -> int:
-    """
-    Invoke claude --print in workdir with program.md as the task prompt.
-    Returns the exit code.
-    """
-    tools_path = str(project_root / "tools")
-    prompt = (project_root / "program.md").read_text().replace("TOOLS_PATH", tools_path)
+_RESUME_PROMPT = """\
+# Cosmological Parameter Calibration — Resume
 
+You are resuming a calibration run that is **not yet converged**.
+
+Your working directory already contains `runs.csv`, `journal.md`, `best_params.json`,
+and `obs_pk.npy` from your previous session.
+
+## Tools
+
+```bash
+python TOOLS_PATH/compute_chi2.py --params '{{"om":0.3,"ob":0.046,"h":0.7,"ns":0.97,"as_":2.1e-9,"w0":-1.0}}' --notes "reasoning"
+```
+→ prints `chi2=<value>  call_idx=<N>`, appends a row to `runs.csv`.
+
+```bash
+python TOOLS_PATH/get_pk.py --params '{{"om":0.3,"ob":0.046,"h":0.7,"ns":0.97,"as_":2.1e-9,"w0":-1.0}}'
+```
+→ prints JSON with keys `k`, `pk`, `obs_pk`, `residual_frac`. Also appends to `runs.csv`.
+
+## Resume now
+
+Follow the compaction recovery procedure in `CLAUDE.md`:
+1. Read `runs.csv` — the row with the lowest chi2 is your current best.
+2. Read the last several entries in `journal.md` to recover your reasoning.
+3. Verify `best_params.json` matches the best `runs.csv` row; update it if not.
+4. Continue from where you left off — do not restart from scratch.
+"""
+
+
+def _invoke_claude(
+    workdir: Path, prompt: str, project_root: Path,
+    timeout_seconds: int = 3600, append_log: bool = False,
+) -> int:
     venv_bin = project_root / ".venv" / "bin"
-    path = str(venv_bin) + os.pathsep + os.environ.get("PATH", "")
-    env = {**os.environ, "PATH": path}
-
+    env = {**os.environ, "PATH": str(venv_bin) + os.pathsep + os.environ.get("PATH", "")}
     log_path = Path(workdir) / "agent.log"
-    with open(log_path, "w") as log_file:
+    with open(log_path, "a" if append_log else "w") as log_file:
         result = subprocess.run(
             [_find_claude(), "--print", "--dangerously-skip-permissions", prompt],
-            cwd=workdir,
-            timeout=timeout_seconds,
-            text=True,
-            stdout=log_file,
-            stderr=log_file,
-            env=env,
+            cwd=workdir, timeout=timeout_seconds,
+            text=True, stdout=log_file, stderr=log_file, env=env,
         )
     return result.returncode
+
+
+def run_agent(workdir: Path, project_root: Path, timeout_seconds: int = 3600) -> int:
+    """Invoke claude --print in workdir with program.md as the task prompt."""
+    tools_path = str(project_root / "tools")
+    prompt = (project_root / "program.md").read_text().replace("TOOLS_PATH", tools_path)
+    return _invoke_claude(workdir, prompt, project_root, timeout_seconds)
+
+
+def continue_agent(workdir: Path, project_root: Path, timeout_seconds: int = 3600) -> int:
+    """
+    Resume an existing (non-converged) run in workdir.
+    Uses the compaction-recovery prompt; appends to agent.log rather than overwriting.
+    Does NOT call setup_workdir() — all existing files are preserved.
+    """
+    tools_path = str(project_root / "tools")
+    prompt = _RESUME_PROMPT.replace("TOOLS_PATH", tools_path)
+    return _invoke_claude(workdir, prompt, project_root, timeout_seconds, append_log=True)

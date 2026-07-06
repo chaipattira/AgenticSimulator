@@ -1,15 +1,14 @@
-import numpy as np
 import pytest
-import yaml
 from pathlib import Path
 
-CONFIG = Path(__file__).parent.parent / "config" / "prior_bounds.yaml"
+from config import load_config, make_k_vec
+
+_PROJECT_ROOT = Path(__file__).parent.parent
 
 
 @pytest.fixture(scope="session")
 def cfg():
-    with open(CONFIG) as f:
-        return yaml.safe_load(f)
+    return load_config(_PROJECT_ROOT)
 
 
 @pytest.fixture(scope="session")
@@ -19,8 +18,7 @@ def prior_bounds(cfg):
 
 @pytest.fixture(scope="session")
 def k_vec(cfg):
-    kv = cfg["k_vector"]
-    return np.logspace(kv["logspace_start"], kv["logspace_end"], kv["n_points"])
+    return make_k_vec(cfg)
 
 
 @pytest.fixture(scope="session")

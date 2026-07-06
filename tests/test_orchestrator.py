@@ -4,12 +4,12 @@ from pathlib import Path
 
 import pytest
 
+from config import PARAM_KEYS
 from orchestrator.harvest import harvest_rollout, RolloutResult
 from orchestrator.run_agent import setup_workdir
+from simulator.syren_wrapper import CSV_FIELDS
 
 _PROJECT_ROOT = Path(__file__).parent.parent
-_PARAM_KEYS = ["om", "ob", "h", "ns", "as_", "w0"]
-_CSV_FIELDS = ["call_idx"] + _PARAM_KEYS + ["timestamp", "chi2", "notes"]
 
 _THETA_A = {"om": 0.28, "ob": 0.046, "h": 0.70, "ns": 0.97, "as_": 2.1e-9, "w0": -1.0}
 _THETA_B = {"om": 0.30, "ob": 0.046, "h": 0.70, "ns": 0.97, "as_": 2.1e-9, "w0": -1.0}
@@ -54,7 +54,7 @@ def test_claude_md_contains_journal_instructions(tmp_path, k_vec, theta_fid, sig
 
 def _write_runs_csv(workdir: Path, rows: list[dict]) -> None:
     with open(workdir / "runs.csv", "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=_CSV_FIELDS)
+        w = csv.DictWriter(f, fieldnames=CSV_FIELDS)
         w.writeheader()
         w.writerows(rows)
 

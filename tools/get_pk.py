@@ -12,6 +12,7 @@ import yaml
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT))
 
+from config import make_k_vec
 from simulator.syren_wrapper import SyrenSimulator, OutOfPriorError
 
 
@@ -24,8 +25,7 @@ def main():
     cwd = Path.cwd()
     with open(cwd / "config" / "prior_bounds.yaml") as f:
         cfg = yaml.safe_load(f)
-    kv = cfg["k_vector"]
-    k_vec = np.logspace(kv["logspace_start"], kv["logspace_end"], kv["n_points"])
+    k_vec = make_k_vec(cfg)
     obs_pk = np.load(cwd / "obs_pk.npy")
 
     params = json.loads(args.params)

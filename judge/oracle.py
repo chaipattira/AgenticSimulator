@@ -3,6 +3,9 @@ from pathlib import Path
 import numpy as np
 from symbolic_pofk.syren_new import pnl_new_emulated
 
+from config import make_k_vec
+from judge.chi2 import compute_chi2
+
 
 def _eval_pk(k_vec: np.ndarray, params: dict) -> np.ndarray:
     return pnl_new_emulated(
@@ -35,7 +38,7 @@ class Oracle:
     def score(self, params: dict) -> float:
         pk_proposal = _eval_pk(self._k_vec, params)
         sigma = self._sigma_k if self._sigma_frac > 0 else np.ones_like(self._pk_obs)
-        return float(np.sum(((pk_proposal - self._pk_obs) / sigma) ** 2) / len(self._k_vec))
+        return compute_chi2(pk_proposal, self._pk_obs, sigma)
 
 
 def generate_obs_cli():
@@ -50,8 +53,7 @@ def generate_obs_cli():
 
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
-    kv = cfg["k_vector"]
-    k_vec = np.logspace(kv["logspace_start"], kv["logspace_end"], kv["n_points"])
+    k_vec = make_k_vec(cfg)
 
     oracle = Oracle(theta_fid=json.loads(args.theta_json), k_vec=k_vec,
                     sigma_frac=args.sigma_frac, seed=args.seed)

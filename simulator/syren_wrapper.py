@@ -5,13 +5,15 @@ from pathlib import Path
 import numpy as np
 from symbolic_pofk.syren_new import pnl_new_emulated
 
+from config import PARAM_KEYS
+
 
 class OutOfPriorError(ValueError):
     pass
 
 
-_PARAM_KEYS = ["om", "ob", "h", "ns", "as_", "w0"]
-_CSV_FIELDS = ["call_idx"] + _PARAM_KEYS + ["timestamp", "chi2", "notes"]
+TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S"
+CSV_FIELDS = ["call_idx"] + PARAM_KEYS + ["timestamp", "chi2", "notes"]
 
 
 class SyrenSimulator:
@@ -28,7 +30,7 @@ class SyrenSimulator:
             self.call_count = 0
             self.csv_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.csv_path, "w", newline="") as f:
-                csv.DictWriter(f, fieldnames=_CSV_FIELDS).writeheader()
+                csv.DictWriter(f, fieldnames=CSV_FIELDS).writeheader()
 
     def __call__(self, params: dict, chi2_fn=None, notes: str = "") -> np.ndarray:
         if self.prior_bounds is not None:
@@ -41,9 +43,9 @@ class SyrenSimulator:
         )
         self.call_count += 1
         chi2 = chi2_fn(pk) if chi2_fn is not None else None
-        row = {"call_idx": self.call_count, **{k: params[k] for k in _PARAM_KEYS},
-               "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        row = {"call_idx": self.call_count, **{k: params[k] for k in PARAM_KEYS},
+               "timestamp": time.strftime(TIMESTAMP_FORMAT),
                "chi2": "" if chi2 is None else chi2, "notes": notes}
         with open(self.csv_path, "a", newline="") as f:
-            csv.DictWriter(f, fieldnames=_CSV_FIELDS).writerow(row)
+            csv.DictWriter(f, fieldnames=CSV_FIELDS).writerow(row)
         return pk
