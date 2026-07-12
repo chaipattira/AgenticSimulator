@@ -18,7 +18,8 @@ k_vector:
   n_points: 50
 noise:
   sigma_frac: 0.02
+  sigma0_realization: 0.1   # fractional realization noise at 1 cpu_hour; scales as sigma0/sqrt(cpu_hours)
 chi2:
   epsilon: 50.0
 budget:
-  max_calls: 150
+  max_cpu_hours: 160.0

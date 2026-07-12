@@ -3,8 +3,22 @@ from pathlib import Path
 import numpy as np
 from symbolic_pofk.syren_new import pnl_new_emulated
 
-from config import make_k_vec
+from config import PARAM_KEYS, make_k_vec
 from judge.chi2 import compute_chi2
+
+
+def draw_valid_theta_fid(rng: np.random.Generator, bounds: dict, k_vec: np.ndarray) -> dict:
+    """Draw a theta_fid uniformly from bounds, rejecting draws that produce a
+    non-finite or unphysical P(k). Deterministic given rng's state."""
+    for _ in range(100):
+        theta = {k: float(rng.uniform(bounds[k]["min"], bounds[k]["max"])) for k in PARAM_KEYS}
+        pk = pnl_new_emulated(
+            k_vec, As=theta["as_"], Om=theta["om"], Ob=theta["ob"],
+            h=theta["h"], ns=theta["ns"], mnu=0.0, w0=theta["w0"], wa=0.0, a=1.0,
+        )
+        if np.all(np.isfinite(pk)) and np.all(pk > 0) and np.all(pk < 1e10):
+            return theta
+    raise RuntimeError("Could not draw a valid theta_fid in 100 attempts")
 
 
 def _eval_pk(k_vec: np.ndarray, params: dict) -> np.ndarray:

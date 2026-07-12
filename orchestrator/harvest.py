@@ -14,12 +14,41 @@ from simulator.syren_wrapper import TIMESTAMP_FORMAT
 @dataclass
 class RolloutResult:
     n_calls: int
+    cpu_hours_total: float  # total simulated compute spent — the primary benchmark metric
     chi2_final: float      # chi2 of best_params.json (from runs.csv row)
     chi2_min: float        # minimum chi2 seen across all calls
     theta_agent: dict      # parameters from best_params.json
     converged: bool
-    cpu_seconds: float     # wall-clock time from first to last runs.csv timestamp
+    cpu_seconds: float     # real wall-clock time (harness runtime), NOT the mocked cpu_hours budget
     workdir: Path
+
+
+def _row_chi2(row: dict) -> float:
+    try:
+        return float(row["chi2"]) if row["chi2"] else float("inf")
+    except (ValueError, KeyError):
+        return float("inf")
+
+
+def _row_cpu_hours(row: dict) -> float:
+    try:
+        return float(row["cpu_hours"]) if row.get("cpu_hours") else 0.0
+    except (ValueError, KeyError):
+        return 0.0
+
+
+def should_stop(workdir: Path, epsilon: float, max_cpu_hours: float) -> bool:
+    """True if runs.csv shows convergence or budget exhaustion. Used by run_agent_loop
+    to decide whether to spawn another iteration; independent of agent self-reporting."""
+    csv_path = Path(workdir) / "runs.csv"
+    if not csv_path.exists():
+        return False
+    rows = list(csv.DictReader(open(csv_path)))
+    if not rows:
+        return False
+    chi2_min = min(_row_chi2(r) for r in rows)
+    cpu_hours_total = sum(_row_cpu_hours(r) for r in rows)
+    return chi2_min < epsilon or cpu_hours_total >= max_cpu_hours
 
 
 def _compute_chi2_from_obs(workdir: Path, theta: dict) -> float:
@@ -55,13 +84,7 @@ def harvest_rollout(workdir: Path, epsilon: float = 50.0) -> RolloutResult:
     if not rows:
         raise ValueError(f"runs.csv in {workdir} is empty")
 
-    def _chi2(row: dict) -> float:
-        try:
-            return float(row["chi2"]) if row["chi2"] else float("inf")
-        except (ValueError, KeyError):
-            return float("inf")
-
-    chi2_min = min(_chi2(r) for r in rows)
+    chi2_min = min(_row_chi2(r) for r in rows)
 
     # cpu_seconds: wall-clock from first to last timestamp
     try:
@@ -78,7 +101,7 @@ def harvest_rollout(workdir: Path, epsilon: float = 50.0) -> RolloutResult:
     for row in rows:
         try:
             if all(abs(float(row[k]) - theta_agent[k]) < 1e-12 for k in PARAM_KEYS):
-                chi2_final = _chi2(row)
+                chi2_final = _row_chi2(row)
                 break
         except (KeyError, ValueError):
             continue
@@ -87,9 +110,11 @@ def harvest_rollout(workdir: Path, epsilon: float = 50.0) -> RolloutResult:
         chi2_final = _compute_chi2_from_obs(workdir, theta_agent)
 
     chi2_min = min(chi2_min, chi2_final)
+    cpu_hours_total = sum(_row_cpu_hours(r) for r in rows)
 
     return RolloutResult(
         n_calls=len(rows),
+        cpu_hours_total=cpu_hours_total,
         chi2_final=chi2_final,
         chi2_min=chi2_min,
         theta_agent=theta_agent,

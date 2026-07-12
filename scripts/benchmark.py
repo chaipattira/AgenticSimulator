@@ -14,24 +14,11 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
-from symbolic_pofk.syren_new import pnl_new_emulated
 
-from config import PARAM_KEYS, load_config, make_k_vec
-from judge.oracle import Oracle
-from orchestrator.run_agent import setup_workdir, run_agent
+from config import load_config, make_k_vec
+from judge.oracle import Oracle, draw_valid_theta_fid
+from orchestrator.run_agent import setup_workdir, run_agent_loop
 from orchestrator.harvest import harvest_rollout
-
-
-def _draw_valid_theta(rng, bounds, k_vec):
-    for _ in range(100):
-        theta = {k: float(rng.uniform(bounds[k]["min"], bounds[k]["max"])) for k in PARAM_KEYS}
-        pk = pnl_new_emulated(
-            k_vec, As=theta["as_"], Om=theta["om"], Ob=theta["ob"],
-            h=theta["h"], ns=theta["ns"], mnu=0.0, w0=theta["w0"], wa=0.0, a=1.0,
-        )
-        if np.all(np.isfinite(pk)) and np.all(pk > 0) and np.all(pk < 1e10):
-            return theta
-    raise RuntimeError("Could not draw a valid theta_fid in 100 attempts")
 
 
 def run_one(seed: int, project_root: Path, epsilon: float) -> dict:
@@ -39,15 +26,16 @@ def run_one(seed: int, project_root: Path, epsilon: float) -> dict:
     cfg = load_config(project_root)
     k_vec = make_k_vec(cfg)
     bounds, sigma_frac = cfg["parameters"], cfg["noise"]["sigma_frac"]
+    max_cpu_hours = cfg["budget"]["max_cpu_hours"]
 
     rng = np.random.default_rng(seed)
-    theta_fid = _draw_valid_theta(rng, bounds, k_vec)
+    theta_fid = draw_valid_theta_fid(rng, bounds, k_vec)
     oracle = Oracle(theta_fid=theta_fid, k_vec=k_vec, sigma_frac=sigma_frac,
                     seed=int(rng.integers(0, 2**31)))
 
     workdir = project_root / "results" / "benchmark" / f"run_{seed:05d}"
     setup_workdir(workdir, oracle, project_root)
-    run_agent(workdir, project_root)
+    run_agent_loop(workdir, project_root, max_cpu_hours=max_cpu_hours, epsilon=epsilon)
 
     result = harvest_rollout(workdir, epsilon=epsilon)
     chi2_oracle = oracle.score(result.theta_agent)
@@ -57,13 +45,15 @@ def run_one(seed: int, project_root: Path, epsilon: float) -> dict:
         "theta_fid": theta_fid,
         "theta_agent": result.theta_agent,
         "n_calls": result.n_calls,
+        "cpu_hours_total": result.cpu_hours_total,
         "chi2_min": result.chi2_min,
         "chi2_oracle": chi2_oracle,
         "converged": result.converged,
         "cpu_seconds": result.cpu_seconds,
     }
-    print(f"[seed={seed}] n_calls={result.n_calls}  chi2_min={result.chi2_min:.4f}  "
-          f"chi2_oracle={chi2_oracle:.4f}  converged={result.converged}", flush=True)
+    print(f"[seed={seed}] n_calls={result.n_calls}  cpu_hours_total={result.cpu_hours_total:.4f}  "
+          f"chi2_min={result.chi2_min:.4f}  chi2_oracle={chi2_oracle:.4f}  converged={result.converged}",
+          flush=True)
     return record
 
 
@@ -103,12 +93,12 @@ def main():
     # Final summary
     if records:
         converged = [r for r in records if r["converged"]]
-        calls = [r["n_calls"] for r in converged]
+        cpu_hours = [r["cpu_hours_total"] for r in converged]
         print(f"\n=== Benchmark summary ===")
         print(f"Runs: {len(records)}  Converged: {len(converged)}/{len(records)}")
-        if calls:
-            print(f"Calls to convergence — mean: {np.mean(calls):.1f}  "
-                  f"median: {np.median(calls):.1f}  min: {min(calls)}  max: {max(calls)}")
+        if cpu_hours:
+            print(f"cpu_hours to convergence — mean: {np.mean(cpu_hours):.2f}  "
+                  f"median: {np.median(cpu_hours):.2f}  min: {min(cpu_hours):.2f}  max: {max(cpu_hours):.2f}")
         print(f"Results saved to {summary_path}")
 
 

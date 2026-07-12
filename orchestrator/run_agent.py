@@ -3,6 +3,7 @@ import json, os, shutil, subprocess
 from pathlib import Path
 
 from judge.oracle import Oracle
+from orchestrator.harvest import should_stop
 
 
 def _syren_source_dir() -> Path | None:
@@ -13,74 +14,10 @@ def _syren_source_dir() -> Path | None:
     return None
 
 
-_CLAUDE_MD = """\
-You are an expert cosmological simulator and Bayesian inference specialist. Your task is to
-recover the cosmological parameters that generated the observed matter power spectrum in
-`obs_pk.npy` using as few simulator calls as possible.
+_CLAUDE_MD_TEMPLATE = Path(__file__).parent / "templates" / "agent_claude.md"
 
-# Non-negotiable Rules
 
-These rules apply at every step, including after context compaction.
-
-## Iteration loop
-
-Every simulator call follows this sequence — no exceptions:
-1. Write the journal entry header **before** calling the tool (Goal + Hypothesis + Method)
-2. Run `compute_chi2.py` or `get_pk.py`
-3. Complete the journal entry (Result + Analysis + Next steps)
-4. Update `best_params.json` if this call produced the lowest chi2 so far
-
-## Journal format
-
-Every iteration in `journal.md`:
-
-```
-## Iteration N
-**Goal:** what you are trying to learn from this call
-**Hypothesis:** what you predict will happen and why
-**Method:** exact parameters — {"om":…, "ob":…, "h":…, "ns":…, "as_":…, "w0":…}
-**Result:** chi2=<value>  call_idx=<N>
-**Analysis:** what the result tells you. include failures and/or note which parameters to move and in which direction
-**Next steps:** what you will try next and why
-```
-
-Remember: If it is not in the journal, it did not happen.
-
-## Tool calling
-
-Every call must have a hypothesis. Do not call speculatively.
-
-All simulator evaluations must go through `compute_chi2.py` or `get_pk.py`. The `symbolic_pofk/` source is read-only.
-You can inspect it to understand how parameters affect the power spectrum but NEVER call from `symbolic_pofk/` directly!
-
-## Analysis scripts
-
-Save every Python analysis script to a `.py` file in the workdir before running it.
-If it is not on disk, it did not happen.
-
-## best_params.json
-
-Always holds your current lowest-chi2 parameters. Update after every call:
-
-```json
-{"om": ..., "ob": ..., "h": ..., "ns": ..., "as_": ..., "w0": ...}
-```
-
-## Stopping
-
-Stop when any of these is true:
-- **chi2 < ε** — write "CALIBRATION COMPLETE" as the Analysis in the final iteration, update `best_params.json`, stop. (ε is at key `chi2.epsilon` in `config/prior_bounds.yaml`)
-- **Budget exhausted** — `call_idx` has reached the value at key `budget.max_calls` in `config/prior_bounds.yaml`
-- **Converged** — last several calls improved chi2 by < 1% and you are below 2×ε
-
-## Compaction recovery
-
-If your context is reset mid-run:
-1. Read `runs.csv` — find the row with the lowest chi2; that is your current best
-2. Read the last several entries in `journal.md` to recover your reasoning
-3. Verify `best_params.json` matches the best `runs.csv` row; update it if not
-4. Continue from where you left off — do not restart from prior midpoints
-"""
+_ITERATION_PROMPT = "Begin your next iteration now. Follow the procedure in CLAUDE.md."
 
 
 def _find_claude() -> str:
@@ -104,8 +41,11 @@ def setup_workdir(base: Path, oracle: Oracle, project_root: Path) -> Path:
     (base / "config").mkdir(exist_ok=True)
     shutil.copy(project_root / "config" / "prior_bounds.yaml", base / "config")
 
-    # Durable operating instructions — survive context compaction
-    (base / "CLAUDE.md").write_text(_CLAUDE_MD)
+    # Durable operating instructions — every iteration is a fresh process, so this
+    # is the only context each invocation gets (auto-loaded by Claude Code from cwd).
+    tools_path = str((project_root / "tools").resolve())
+    claude_md = _CLAUDE_MD_TEMPLATE.read_text().replace("TOOLS_PATH", tools_path)
+    (base / "CLAUDE.md").write_text(claude_md)
 
     # Restrict the agent to its own workdir, the shared tools directory, and the
     # syren_new source (read-only reference; enforced by instruction, not filesystem perms)
@@ -119,44 +59,12 @@ def setup_workdir(base: Path, oracle: Oracle, project_root: Path) -> Path:
     return base
 
 
-_RESUME_PROMPT = """\
-# Cosmological Parameter Calibration — Resume
-
-You are resuming a calibration run that is **not yet converged**.
-
-Your working directory already contains `runs.csv`, `journal.md`, `best_params.json`,
-and `obs_pk.npy` from your previous session.
-
-## Tools
-
-```bash
-python TOOLS_PATH/compute_chi2.py --params '{{"om":0.3,"ob":0.046,"h":0.7,"ns":0.97,"as_":2.1e-9,"w0":-1.0}}' --notes "reasoning"
-```
-→ prints `chi2=<value>  call_idx=<N>`, appends a row to `runs.csv`.
-
-```bash
-python TOOLS_PATH/get_pk.py --params '{{"om":0.3,"ob":0.046,"h":0.7,"ns":0.97,"as_":2.1e-9,"w0":-1.0}}'
-```
-→ prints JSON with keys `k`, `pk`, `obs_pk`, `residual_frac`. Also appends to `runs.csv`.
-
-## Resume now
-
-Follow the compaction recovery procedure in `CLAUDE.md`:
-1. Read `runs.csv` — the row with the lowest chi2 is your current best.
-2. Read the last several entries in `journal.md` to recover your reasoning.
-3. Verify `best_params.json` matches the best `runs.csv` row; update it if not.
-4. Continue from where you left off — do not restart from scratch.
-"""
-
-
-def _invoke_claude(
-    workdir: Path, prompt: str, project_root: Path,
-    timeout_seconds: int = 3600, append_log: bool = False,
-) -> int:
+def _invoke_claude(workdir: Path, prompt: str, project_root: Path, timeout_seconds: int) -> int:
+    """Spawn one fresh `claude --print` process in workdir. Appends to agent.log."""
     venv_bin = project_root / ".venv" / "bin"
     env = {**os.environ, "PATH": str(venv_bin) + os.pathsep + os.environ.get("PATH", "")}
     log_path = Path(workdir) / "agent.log"
-    with open(log_path, "a" if append_log else "w") as log_file:
+    with open(log_path, "a") as log_file:
         result = subprocess.run(
             [_find_claude(), "--print", "--dangerously-skip-permissions", prompt],
             cwd=workdir, timeout=timeout_seconds,
@@ -165,19 +73,36 @@ def _invoke_claude(
     return result.returncode
 
 
-def run_agent(workdir: Path, project_root: Path, timeout_seconds: int = 3600) -> int:
-    """Invoke claude --print in workdir with program.md as the task prompt."""
-    tools_path = str(project_root / "tools")
-    prompt = (project_root / "program.md").read_text().replace("TOOLS_PATH", tools_path)
-    return _invoke_claude(workdir, prompt, project_root, timeout_seconds)
-
-
-def continue_agent(workdir: Path, project_root: Path, timeout_seconds: int = 3600) -> int:
+def run_agent_loop(
+    workdir: Path,
+    project_root: Path,
+    max_cpu_hours: float,
+    epsilon: float,
+    max_iterations: int = 50,
+    iteration_timeout: int = 600,
+    max_consecutive_failures: int = 3,
+) -> int:
     """
-    Resume an existing (non-converged) run in workdir.
-    Uses the compaction-recovery prompt; appends to agent.log rather than overwriting.
-    Does NOT call setup_workdir() — all existing files are preserved.
+    Run the calibration loop: spawn one fresh `claude --print` process per iteration.
+    Each iteration reads state from disk (runs.csv, journal.md, best_params.json) and
+    makes exactly one simulator call, at a cpu_hours cost of its own choosing.
+
+    Stops when runs.csv shows convergence or budget exhaustion (should_stop), when
+    max_iterations is reached (a safety cap independent of cpu_hours, since a call can
+    cost an arbitrarily small amount), or when max_consecutive_failures worth of claude
+    invocations exit non-zero in a row.
+
+    Returns the number of iterations run.
     """
-    tools_path = str(project_root / "tools")
-    prompt = _RESUME_PROMPT.replace("TOOLS_PATH", tools_path)
-    return _invoke_claude(workdir, prompt, project_root, timeout_seconds, append_log=True)
+    workdir = Path(workdir)
+    consecutive_failures = 0
+
+    for i in range(1, max_iterations + 1):
+        rc = _invoke_claude(workdir, _ITERATION_PROMPT, project_root, timeout_seconds=iteration_timeout)
+        consecutive_failures = 0 if rc == 0 else consecutive_failures + 1
+        if consecutive_failures >= max_consecutive_failures:
+            break
+        if should_stop(workdir, epsilon, max_cpu_hours):
+            break
+
+    return i
