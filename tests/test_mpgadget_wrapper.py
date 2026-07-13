@@ -60,8 +60,8 @@ def test_call_returns_pk_and_cpu_hours(tmp_path, monkeypatch):
 
     assert pk.shape == (25,)
     assert np.all(pk > 0) and np.all(np.isfinite(pk))
-    # two jobs (genic + gadget), each 60s * 16 cpus / 3600 = 0.2667h -> total 0.5333h
-    assert cpu_hours == pytest.approx(2 * 60 * 16 / 3600, rel=1e-6)
+    # one combined job (genic + gadget sequential in one allocation): 60s * 16 cpus / 3600 = 0.1667h
+    assert cpu_hours == pytest.approx(60 * 16 / 3600, rel=1e-6)
 
 
 def test_call_writes_consistent_omega_lambda(tmp_path, monkeypatch):
@@ -130,3 +130,23 @@ def test_missing_powerspectrum_file_raises(tmp_path, monkeypatch):
                              prior_bounds=_prior_bounds())
     with pytest.raises(MPGadgetJobError):
         sim(PARAMS, ngrid=48, box_size_kpc=4000, workdir=workdir)
+
+
+@pytest.mark.slurm
+def test_real_mpgadget_run_end_to_end(tmp_path):
+    """Not run by default (pyproject.toml's addopts excludes -m slurm). Run explicitly
+    with `pytest -m slurm` on Anvil after the shenqi/ build (see the design spec's Task 6
+    build notes) is done. Verified for real on 2026-07-13, before the genic+gadget single-job
+    merge: this exact config completed in ~9 minutes wall-clock (genic 6s, gadget 8m43s as two
+    separate jobs then) and produced a finite, physically sane, monotonically-declining pk with
+    cpu_hours=2.35. Needs a fresh real run to reconfirm under the merged single-job version —
+    total wall-clock should be about the same, but cpu_hours accounting now comes from one
+    sacct query instead of summing two."""
+    sim = MPGadgetSimulator(
+        shenqi_root=_SHENQI_ROOT, csv_path=tmp_path / "runs.csv",
+        prior_bounds=_prior_bounds(), partition="debug",
+    )
+    pk, cpu_hours = sim(PARAMS, ngrid=48, box_size_kpc=4000, workdir=tmp_path / "trial_0")
+    assert pk.shape == (25,)
+    assert np.all(np.isfinite(pk)) and np.all(pk > 0)
+    assert cpu_hours > 0

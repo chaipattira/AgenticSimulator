@@ -1,6 +1,7 @@
 """Wraps a real MP-Gadget (shenqi fork) run: writes paramfiles, generates the trial's
-input power spectrum via CLASS, submits MP-GenIC then MP-Gadget as blocking SLURM jobs,
-parses the resulting P(k), and interpolates it onto the canonical MP-Gadget k-grid.
+input power spectrum via CLASS, submits MP-GenIC and MP-Gadget as one blocking SLURM job
+(both mpirun calls sequential in one allocation — see _write_job_script), parses the
+resulting P(k), and interpolates it onto the canonical MP-Gadget k-grid.
 
 See docs/superpowers/specs/2026-07-13-mpgadget-wrapper-design.md for the full design.
 No agent involvement here — this proves (params, ngrid, box_size) -> (pk, cpu_hours)
@@ -117,19 +118,14 @@ class MPGadgetSimulator:
 
         self._run_make_class_power(genic_path)
 
-        cpu_hours = 0.0
-        cpu_hours += submit_and_wait(
-            self._write_job_script(workdir, "genic", genic_path), stage="genic",
-            log_path=workdir / "genic.slurm.log",
-        )
-        cpu_hours += submit_and_wait(
-            self._write_job_script(workdir, "gadget", gadget_path), stage="gadget",
-            log_path=workdir / "gadget.slurm.log",
+        cpu_hours = submit_and_wait(
+            self._write_job_script(workdir, genic_path, gadget_path), stage="mpgadget",
+            log_path=workdir / "mpgadget.slurm.log",
         )
 
         pk_path = output_dir / "powerspectrum-1.0000.txt"
         if not pk_path.exists():
-            raise MPGadgetJobError("gadget", f"{pk_path} not found after job completion")
+            raise MPGadgetJobError("mpgadget", f"{pk_path} not found after job completion")
         k_raw, p_raw = read_powerspectrum(pk_path)
         k_grid = _canonical_k_grid()
         pk = interpolate_to_grid(k_raw, p_raw, k_grid)
@@ -147,17 +143,24 @@ class MPGadgetSimulator:
         if result.returncode != 0:
             raise MPGadgetJobError("make_class_power", result.stderr)
 
-    def _write_job_script(self, workdir: Path, stage: str, paramfile: Path) -> Path:
-        binary = self.shenqi_root / ("genic/MP-GenIC" if stage == "genic" else "gadget/MP-Gadget")
-        script_path = workdir / f"{stage}.slurm.sh"
-        log_path = workdir / f"{stage}.slurm.log"
+    def _write_job_script(self, workdir: Path, genic_paramfile: Path, gadget_paramfile: Path) -> Path:
+        """One SLURM job runs both MP-GenIC and MP-Gadget sequentially in the same
+        allocation — matches shenqi/examples/small/run.sh's own pattern (mpirun genic,
+        then mpirun gadget, `|| exit 1` between them). Halves real job submissions per
+        evaluation versus submitting genic and gadget as two separate sbatch --wait
+        calls: one queue wait instead of two, one sacct query instead of two, and half
+        the exposure to Anvil's per-user concurrent-job (QOS) submit limit."""
+        genic_binary = self.shenqi_root / "genic" / "MP-GenIC"
+        gadget_binary = self.shenqi_root / "gadget" / "MP-Gadget"
+        script_path = workdir / "mpgadget.slurm.sh"
+        log_path = workdir / "mpgadget.slurm.log"
         script_path.write_text(f"""#!/bin/bash
 #SBATCH --account={self.slurm_account}
 #SBATCH --partition={self.partition}
 #SBATCH --ntasks={self.ntasks}
 #SBATCH --cpus-per-task={self.cpus_per_task}
 #SBATCH --time={self.walltime}
-#SBATCH --job-name=mpgadget-{stage}
+#SBATCH --job-name=mpgadget-trial
 #SBATCH --output={log_path}
 #SBATCH --error={log_path}
 
@@ -166,7 +169,8 @@ module load {_MODULES}
 export OMP_NUM_THREADS={self.cpus_per_task}
 
 cd {workdir}
-mpirun -np {self.ntasks} {binary} {paramfile}
+mpirun -np {self.ntasks} {genic_binary} {genic_paramfile} || exit 1
+mpirun -np {self.ntasks} {gadget_binary} {gadget_paramfile} || exit 1
 """)
         return script_path
 
