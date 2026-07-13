@@ -238,7 +238,10 @@ def test_run_mpgadget_trial_job_error_exits_nonzero_with_stage(
         if cmd[0] == "python":
             return subprocess.CompletedProcess(cmd, 0, "ok", "")
         if cmd[0] == "sbatch":
-            # genic is submitted first — fail there so gadget is never reached
+            # genic and gadget now submit as one combined job (see
+            # simulator/mpgadget_wrapper.py's single-job merge) — a failure anywhere in
+            # it reports stage="mpgadget", not a genic/gadget-specific stage, since
+            # there's no longer a separate genic submission to distinguish.
             return subprocess.CompletedProcess(cmd, 1, "", "out of SLURM allocation")
         raise AssertionError(f"unexpected call {cmd}")
     monkeypatch.setattr(subprocess, "run", _failing_run)
@@ -252,4 +255,4 @@ def test_run_mpgadget_trial_job_error_exits_nonzero_with_stage(
         mod.main()
     assert exc.value.code != 0
     captured = capsys.readouterr()
-    assert "stage=genic" in captured.err
+    assert "stage=mpgadget" in captured.err
