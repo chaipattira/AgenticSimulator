@@ -28,3 +28,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["judge", "simulator", "tools", "orchestrator", "baselines"]
+
+[tool.pytest.ini_options]
+markers = ["slurm: real SLURM job submission, skipped by default (run with -m slurm)"]
+addopts = "-m 'not slurm'"

@@ -1,4 +1,5 @@
 import csv
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -133,20 +134,32 @@ def test_missing_powerspectrum_file_raises(tmp_path, monkeypatch):
 
 
 @pytest.mark.slurm
-def test_real_mpgadget_run_end_to_end(tmp_path):
+def test_real_mpgadget_run_end_to_end():
     """Not run by default (pyproject.toml's addopts excludes -m slurm). Run explicitly
     with `pytest -m slurm` on Anvil after the shenqi/ build (see the design spec's Task 6
-    build notes) is done. Verified for real on 2026-07-13, before the genic+gadget single-job
-    merge: this exact config completed in ~9 minutes wall-clock (genic 6s, gadget 8m43s as two
-    separate jobs then) and produced a finite, physically sane, monotonically-declining pk with
+    build notes) is done.
+
+    Deliberately does NOT use pytest's tmp_path fixture: tmp_path resolves under /tmp,
+    which is local to the login node and not visible to Anvil's compute nodes — a real
+    SLURM job given a /tmp workdir fails immediately (no shared paramfiles, and SLURM
+    itself can't even write the --output log there), confirmed by hitting exactly this
+    failure on 2026-07-13. Every real MPGadgetSimulator workdir must live under a
+    cluster-wide shared filesystem (here, results/ under the project root, already
+    gitignored like every other real-run artifact this project produces).
+
+    Verified for real on 2026-07-13, before the genic+gadget single-job merge: this exact
+    config completed in ~9 minutes wall-clock (genic 6s, gadget 8m43s as two separate jobs
+    then) and produced a finite, physically sane, monotonically-declining pk with
     cpu_hours=2.35. Needs a fresh real run to reconfirm under the merged single-job version —
     total wall-clock should be about the same, but cpu_hours accounting now comes from one
     sacct query instead of summing two."""
+    workdir_root = _PROJECT_ROOT / "results" / "test_slurm_marker"
+    shutil.rmtree(workdir_root, ignore_errors=True)  # idempotent across repeated manual runs
     sim = MPGadgetSimulator(
-        shenqi_root=_SHENQI_ROOT, csv_path=tmp_path / "runs.csv",
-        prior_bounds=_prior_bounds(), partition="debug",
+        shenqi_root=_SHENQI_ROOT, csv_path=workdir_root / "runs.csv",
+        prior_bounds=_prior_bounds(),
     )
-    pk, cpu_hours = sim(PARAMS, ngrid=48, box_size_kpc=4000, workdir=tmp_path / "trial_0")
+    pk, cpu_hours = sim(PARAMS, ngrid=48, box_size_kpc=4000, workdir=workdir_root / "trial_0")
     assert pk.shape == (25,)
     assert np.all(np.isfinite(pk)) and np.all(pk > 0)
     assert cpu_hours > 0

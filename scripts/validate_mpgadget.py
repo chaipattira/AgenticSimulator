@@ -8,7 +8,6 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sim = MPGadgetSimulator(
     shenqi_root=PROJECT_ROOT / "shenqi",
     csv_path=PROJECT_ROOT / "results" / "mpgadget_validation" / "runs.csv",
-    partition="debug",  # faster queue turnaround for a one-off validation run
 )
 pk, cpu_hours = sim(
     params={"om": 0.2814, "ob": 0.0464, "sigma8": 0.81,

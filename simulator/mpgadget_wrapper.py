@@ -39,13 +39,14 @@ def _canonical_k_grid() -> np.ndarray:
 
 class MPGadgetSimulator:
     def __init__(self, shenqi_root: Path, csv_path: Path, prior_bounds: dict | None = None,
-                 slurm_account: str = "phy240043", partition: str = "shared",
+                 slurm_account: str = "phy240043", partition: str = "shared", nodes: int = 1,
                  ntasks: int = 8, cpus_per_task: int = 2, walltime: str = "00:30:00"):
         self.shenqi_root = Path(shenqi_root)
         self.csv_path = Path(csv_path)
         self.prior_bounds = prior_bounds
         self.slurm_account = slurm_account
         self.partition = partition
+        self.nodes = nodes
         self.ntasks = ntasks
         self.cpus_per_task = cpus_per_task
         self.walltime = walltime
@@ -149,7 +150,14 @@ class MPGadgetSimulator:
         then mpirun gadget, `|| exit 1` between them). Halves real job submissions per
         evaluation versus submitting genic and gadget as two separate sbatch --wait
         calls: one queue wait instead of two, one sacct query instead of two, and half
-        the exposure to Anvil's per-user concurrent-job (QOS) submit limit."""
+        the exposure to Anvil's per-user concurrent-job (QOS) submit limit.
+
+        --nodes={self.nodes} pins the job to a fixed node count (default 1) rather than
+        leaving placement to SLURM: an identical config was observed to take 9 minutes on
+        one node but time out at 30 minutes when the scheduler split it across two
+        partially-loaded nodes instead (extra MPI communication overhead across the tree/
+        domain-decomposition pattern) — trading a possibly longer queue wait for
+        predictable run time once started."""
         genic_binary = self.shenqi_root / "genic" / "MP-GenIC"
         gadget_binary = self.shenqi_root / "gadget" / "MP-Gadget"
         script_path = workdir / "mpgadget.slurm.sh"
@@ -157,6 +165,7 @@ class MPGadgetSimulator:
         script_path.write_text(f"""#!/bin/bash
 #SBATCH --account={self.slurm_account}
 #SBATCH --partition={self.partition}
+#SBATCH --nodes={self.nodes}
 #SBATCH --ntasks={self.ntasks}
 #SBATCH --cpus-per-task={self.cpus_per_task}
 #SBATCH --time={self.walltime}
