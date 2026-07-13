@@ -10,6 +10,17 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov"]
+# Required to run shenqi/tools/make_class_power.py (generates each MP-Gadget
+# trial's input power spectrum via CLASS). `classy` compiles CLASS from source
+# at install time (needs a C compiler — the gcc module on Anvil). The
+# standalone `validate` package (imported by make_class_power.py) is
+# Python-2-only and cannot be pip-installed on Python 3; `configobj` (the
+# DiffSK fork) bundles its own Python-3-compatible validate module, but
+# make_class_power.py does a bare `import validate`, so after installing
+# these, also drop scripts/validate_shim.py's contents in as
+# <venv>/lib/python3.11/site-packages/validate.py (see that file's header
+# comment for why).
+mpgadget = ["classy", "configobj"]
 
 [build-system]
 requires = ["hatchling"]

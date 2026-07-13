@@ -1,0 +1,8 @@
+MPICC = mpic++
+OPTIMIZE = -fopenmp -O3 -g -Wall -ffast-math
+# Anvil's boost module (1.74.0) is too old for shenqi's use of
+# boost::math::interpolators::barycentric_rational (moved into that namespace
+# in a later Boost release). Boost.Math/Boost.Odeint are header-only here
+# (BOOST_LIBS is empty in Makefile.rules — nothing to link), so a newer
+# Boost's headers alone, vendored under depends/boost_1_84_0, are sufficient.
+BOOST_INCL = -I/anvil/scratch/x-ctirapongpra/AgenticSimulator/shenqi/depends/boost_1_84_0
