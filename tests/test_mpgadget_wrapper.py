@@ -6,11 +6,17 @@ import numpy as np
 import pytest
 import yaml
 
+from config import default_shenqi_root
 from simulator.mpgadget_wrapper import MPGadgetSimulator, MPGadgetJobError
 from simulator.syren_wrapper import OutOfPriorError
 
 _PROJECT_ROOT = Path(__file__).parent.parent
-_SHENQI_ROOT = _PROJECT_ROOT / "shenqi"
+# default_shenqi_root honors MPGADGET_SHENQI_ROOT when set, falling back to
+# <project_root>/shenqi otherwise (identical to the old hardcoded path in every
+# environment where shenqi/ actually lives at the project root) — see config.py's
+# docstring. Needed so these tests also run inside a git worktree, which does not carry
+# gitignored directories like shenqi/ from the main checkout.
+_SHENQI_ROOT = default_shenqi_root(_PROJECT_ROOT)
 
 PARAMS = {
     "om": 0.2814, "ob": 0.0464, "sigma8": 0.81,

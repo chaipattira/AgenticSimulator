@@ -1,3 +1,7 @@
+# parameters/resolution/k_vector below are sub-project 1's (owns this schema — see
+# docs/superpowers/specs/2026-07-13-mpgadget-wrapper-design.md). fixed/fiducial/noise/
+# chi2/budget below are sub-project 2 additions for the agent-facing phase (see
+# docs/superpowers/specs/2026-07-13-mpgadget-agent-integration-design.md section 1).
 parameters:
   om:   {min: 0.20, max: 0.36}
   ob:   {min: 0.035, max: 0.058}
@@ -12,3 +16,34 @@ k_vector:
   logspace_start: 0.30103    # log10(2)
   logspace_end: 1.17609      # log10(15)
   n_points: 25
+# Fiducial values (shenqi/examples/small/paramfile.genic + paramfile.gadget):
+#   om=0.2814  ob=0.0464  sigma8=0.810  h=0.697  ns=0.971  w0=-1.0 (implicit LCDM)
+#   wind_energy_fraction=1.0  wind_speed_factor=3.7  bh_feedback_factor=0.05
+fiducial:
+  om: 0.2814
+  ob: 0.0464
+  sigma8: 0.810
+  wind_energy_fraction: 1.0
+  wind_speed_factor: 3.7
+  bh_feedback_factor: 0.05
+# h, ns, w0 stay fixed at these fiducial values throughout the MP-Gadget phase — never
+# agent-selectable, never included in --params. Used by SyrenAnsatz and by
+# MPGadgetOracle's theta_fid draw.
+fixed:
+  h: 0.697
+  ns: 0.971
+  w0: -1.0
+noise:
+  sigma_frac: 0.02          # fixed 2% observational noise floor on obs_pk.npy (MPGadgetOracle)
+  ansatz_sigma0: 0.02       # fixed fractional noise on SyrenAnsatz's free pre-screening output
+                            # (NOT cpu_hours-dependent — no realization-noise dial exists here)
+chi2:
+  epsilon: 50.0             # same threshold convention as the syren_new MVP; provisional —
+                             # not re-derived for the 25-point MP-Gadget k-grid
+budget:
+  # MPGadgetSimulator's provisional SLURM request (sub-project 1 spec): ntasks=8,
+  # cpus_per_task=2 -> 16 cores/job x 2 jobs (genic+gadget) x <=30 min walltime each
+  # -> ~16 cpu_hours upper bound per trial. 200 cpu_hours budgets for roughly 10-25 real
+  # trials depending on how close to the walltime cap each run actually lands -- provisional,
+  # not empirically measured (see design doc's open risks).
+  max_cpu_hours: 200.0

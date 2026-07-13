@@ -71,7 +71,17 @@ def _compute_chi2_from_obs(workdir: Path, theta: dict) -> float:
     return compute_chi2(pk_sim, obs_pk, sigma)
 
 
-def harvest_rollout(workdir: Path, epsilon: float = 50.0) -> RolloutResult:
+def harvest_rollout(workdir: Path, epsilon: float = 50.0, param_keys: list = None) -> RolloutResult:
+    """
+    `param_keys` selects the schema to match theta_agent back to a runs.csv row —
+    PARAM_KEYS (default) for the syren_new backend, MPGADGET_PARAM_KEYS for the mpgadget
+    backend (whose runs.csv has no h/ns/as_/w0 columns at all). The syren_new-specific
+    free chi2 recompute fallback (_compute_chi2_from_obs, which calls pnl_new_emulated) is
+    only used for the default PARAM_KEYS schema — for any other schema there is no free,
+    trustworthy way to recompute chi2 (see MPGadgetOracle's docstring for why), so an
+    unmatched row falls back to the already-known chi2_min instead of a fabricated number.
+    """
+    param_keys = PARAM_KEYS if param_keys is None else param_keys
     workdir = Path(workdir)
 
     best_params_path = workdir / "best_params.json"
@@ -96,18 +106,19 @@ def harvest_rollout(workdir: Path, epsilon: float = 50.0) -> RolloutResult:
 
     # chi2_final: match theta_agent back to runs.csv for an exact chi2.
     # If no match (e.g. agent used get_pk-based optimizer that leaves chi2 blank),
-    # compute chi2 directly from obs_pk.npy so harvest is always accurate.
+    # compute chi2 directly from obs_pk.npy so harvest is always accurate — but only for
+    # the syren_new schema; see docstring above.
     chi2_final = float("inf")
     for row in rows:
         try:
-            if all(abs(float(row[k]) - theta_agent[k]) < 1e-12 for k in PARAM_KEYS):
+            if all(abs(float(row[k]) - theta_agent[k]) < 1e-12 for k in param_keys):
                 chi2_final = _row_chi2(row)
                 break
         except (KeyError, ValueError):
             continue
 
     if chi2_final == float("inf"):
-        chi2_final = _compute_chi2_from_obs(workdir, theta_agent)
+        chi2_final = _compute_chi2_from_obs(workdir, theta_agent) if param_keys == PARAM_KEYS else chi2_min
 
     chi2_min = min(chi2_min, chi2_final)
     cpu_hours_total = sum(_row_cpu_hours(r) for r in rows)
