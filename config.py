@@ -4,6 +4,7 @@ import numpy as np
 import yaml
 
 PARAM_KEYS = ["om", "ob", "h", "ns", "as_", "w0"]
+MPGADGET_PARAM_KEYS = ["om", "ob", "sigma8", "wind_energy_fraction", "wind_speed_factor", "bh_feedback_factor"]
 
 
 def load_config(project_root: Path) -> dict:

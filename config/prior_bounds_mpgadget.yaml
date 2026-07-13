@@ -1,0 +1,14 @@
+parameters:
+  om:   {min: 0.20, max: 0.36}
+  ob:   {min: 0.035, max: 0.058}
+  sigma8: {min: 0.65, max: 0.95}
+  wind_energy_fraction: {min: 0.3, max: 2.0}
+  wind_speed_factor: {min: 2.0, max: 6.0}
+  bh_feedback_factor: {min: 0.01, max: 0.15}
+resolution:
+  ngrid: {min: 48, max: 64}
+  box_size_kpc: {min: 4000, max: 8000}
+k_vector:
+  logspace_start: 0.30103    # log10(2)
+  logspace_end: 1.17609      # log10(15)
+  n_points: 25
