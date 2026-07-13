@@ -23,6 +23,7 @@ _PROJECT_ROOT = Path(__file__).parent.parent
 TOOLS_DIR = _PROJECT_ROOT / "tools"
 
 GENIC_TEMPLATE = """OutputDir = output
+FileBase = IC
 Ngrid = 32
 BoxSize = 4000
 Omega0 = 0.2814
@@ -70,6 +71,7 @@ def _fake_shenqi_root(tmp_path):
     (root / "examples" / "TREECOOL_fg_june11").write_text("# stub\n")
     (root / "examples" / "cooling_metal_UVB").write_text("# stub\n")
     (root / "tools").mkdir()
+    (root / "tools" / "make_class_power.py").write_text("# stub — always mocked via subprocess.run\n")
     (root / "genic").mkdir()
     (root / "gadget").mkdir()
     return root
@@ -82,25 +84,33 @@ def _load_module(name, path):
     return mod
 
 
-def _fake_mpgadget_subprocess_run(k_fixture, p_fixture):
+def _fake_mpgadget_subprocess_run(k_fixture, p_fixture, sbatch_rc: dict | None = None):
+    """Stands in for subprocess.run across all three stages MPGadgetSimulator shells out
+    to (see simulator/mpgadget_wrapper.py + simulator/slurm.py): `python
+    make_class_power.py <genic_path>`, `sbatch --wait <stage>.slurm.sh`, and
+    `sacct -j <job_id> ...`."""
+    sbatch_rc = sbatch_rc or {}
+
     def _run(cmd, capture_output=True, text=True, **kwargs):
-        if cmd[0] == sys.executable:
-            out_path = Path(cmd[cmd.index("--out") + 1])
-            out_path.write_text("# stub input pk\n1.0 100.0\n")
+        if cmd[0] == "python":
             return subprocess.CompletedProcess(cmd, 0, "ok", "")
         if cmd[0] == "sbatch":
             script_path = Path(cmd[-1])
             workdir = script_path.parent
-            stage = script_path.stem.replace("_job", "")
+            stage = "genic" if "genic" in script_path.name else "gadget"
+            rc = sbatch_rc.get(stage, 0)
+            if rc != 0:
+                return subprocess.CompletedProcess(cmd, rc, "", f"SLURM error at stage {stage}")
             job_id = {"genic": "1001", "gadget": "1002"}[stage]
             if stage == "gadget":
                 out_dir = workdir / "output"
                 out_dir.mkdir(parents=True, exist_ok=True)
-                lines = "\n".join(f"{k} {p}" for k, p in zip(k_fixture, p_fixture))
-                (out_dir / "powerspectrum-1.0000.txt").write_text("# k P\n" + lines + "\n")
+                lines = "\n".join(f"{k} {p} 100 {p}" for k, p in zip(k_fixture, p_fixture))
+                (out_dir / "powerspectrum-1.0000.txt").write_text("# k P N Pz0\n" + lines + "\n")
             return subprocess.CompletedProcess(cmd, 0, f"Submitted batch job {job_id}\n", "")
         if cmd[0] == "sacct":
-            return subprocess.CompletedProcess(cmd, 0, "100|8\n", "")
+            job_id = cmd[cmd.index("-j") + 1]
+            return subprocess.CompletedProcess(cmd, 0, f"{job_id}|100|8\n", "")
         raise AssertionError(f"unexpected subprocess.run call: {cmd}")
     return _run
 
@@ -225,11 +235,10 @@ def test_run_mpgadget_trial_job_error_exits_nonzero_with_stage(
     monkeypatch.chdir(wd)
 
     def _failing_run(cmd, **kwargs):
-        if cmd[0] == sys.executable:
-            out_path = Path(cmd[cmd.index("--out") + 1])
-            out_path.write_text("1.0 100.0\n")
+        if cmd[0] == "python":
             return subprocess.CompletedProcess(cmd, 0, "ok", "")
         if cmd[0] == "sbatch":
+            # genic is submitted first — fail there so gadget is never reached
             return subprocess.CompletedProcess(cmd, 1, "", "out of SLURM allocation")
         raise AssertionError(f"unexpected call {cmd}")
     monkeypatch.setattr(subprocess, "run", _failing_run)

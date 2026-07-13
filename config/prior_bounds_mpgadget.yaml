@@ -1,18 +1,24 @@
-# Prior bounds for the MP-Gadget phase (sub-project 2 of the MP-Gadget extension).
-# Schema per docs/superpowers/specs/2026-07-13-mpgadget-wrapper-design.md: `parameters`,
-# `resolution`, `k_vector` are that spec's documented shape. `fixed`, `noise`, `chi2`,
-# `budget` are sub-project-2 additions (see design doc section 1 and "Open decisions").
-#
+# parameters/resolution/k_vector below are sub-project 1's (owns this schema — see
+# docs/superpowers/specs/2026-07-13-mpgadget-wrapper-design.md). fixed/fiducial/noise/
+# chi2/budget below are sub-project 2 additions for the agent-facing phase (see
+# docs/superpowers/specs/2026-07-13-mpgadget-agent-integration-design.md section 1).
+parameters:
+  om:   {min: 0.20, max: 0.36}
+  ob:   {min: 0.035, max: 0.058}
+  sigma8: {min: 0.65, max: 0.95}
+  wind_energy_fraction: {min: 0.3, max: 2.0}
+  wind_speed_factor: {min: 2.0, max: 6.0}
+  bh_feedback_factor: {min: 0.01, max: 0.15}
+resolution:
+  ngrid: {min: 48, max: 64}
+  box_size_kpc: {min: 4000, max: 8000}
+k_vector:
+  logspace_start: 0.30103    # log10(2)
+  logspace_end: 1.17609      # log10(15)
+  n_points: 25
 # Fiducial values (shenqi/examples/small/paramfile.genic + paramfile.gadget):
 #   om=0.2814  ob=0.0464  sigma8=0.810  h=0.697  ns=0.971  w0=-1.0 (implicit LCDM)
 #   wind_energy_fraction=1.0  wind_speed_factor=3.7  bh_feedback_factor=0.05
-parameters:
-  om:                    {min: 0.20, max: 0.40}
-  ob:                    {min: 0.03, max: 0.06}
-  sigma8:                {min: 0.60, max: 1.00}
-  wind_energy_fraction:  {min: 0.5,  max: 2.0}
-  wind_speed_factor:     {min: 2.0,  max: 6.0}
-  bh_feedback_factor:    {min: 0.01, max: 0.15}
 fiducial:
   om: 0.2814
   ob: 0.0464
@@ -27,13 +33,6 @@ fixed:
   h: 0.697
   ns: 0.971
   w0: -1.0
-resolution:
-  ngrid:        {min: 48,   max: 64}
-  box_size_kpc: {min: 4000, max: 8000}
-k_vector:
-  logspace_start: 0.301029995663981   # log10(2)
-  logspace_end: 1.1760912590556813    # log10(15)
-  n_points: 25
 noise:
   sigma_frac: 0.02          # fixed 2% observational noise floor on obs_pk.npy (MPGadgetOracle)
   ansatz_sigma0: 0.02       # fixed fractional noise on SyrenAnsatz's free pre-screening output
