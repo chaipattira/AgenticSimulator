@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import numpy as np
@@ -32,3 +33,13 @@ def load_config(project_root: Path, filename: str = "prior_bounds.yaml") -> dict
 def make_k_vec(cfg: dict) -> np.ndarray:
     kv = cfg["k_vector"]
     return np.logspace(kv["logspace_start"], kv["logspace_end"], kv["n_points"])
+
+
+def default_shenqi_root(project_root: Path) -> Path:
+    """shenqi/ is gitignored (a large external C codebase, not project source — see
+    CLAUDE.md) and is expected to live at <project_root>/shenqi. MPGADGET_SHENQI_ROOT
+    overrides this — mainly so tests, and any dev environment where the checkout root and
+    shenqi/'s actual on-disk location diverge (e.g. a git worktree, which does not carry
+    gitignored directories from the main checkout), can point at a fixture/real directory
+    instead of a path that doesn't exist relative to `project_root`."""
+    return Path(os.environ.get("MPGADGET_SHENQI_ROOT", str(Path(project_root) / "shenqi")))
