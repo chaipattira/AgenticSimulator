@@ -31,7 +31,7 @@ def _shenqi_source_dir(project_root: Path) -> Path | None:
 # an HPC/SLURM simulator backend later" goal requires.
 _BACKENDS = {
     "syren_new": {
-        "template": Path(__file__).parent / "templates" / "agent_claude.md",
+        "template": Path(__file__).parent / "templates" / "agent_claude_syren_new.md",
         "config_filename": "prior_bounds.yaml",
         "extra_source_dir": _syren_source_dir,
     },
